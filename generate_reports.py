@@ -24,7 +24,7 @@ class GenerateReports:
         self.back_btn_color = "#F44336"   # Red
         self.gen_btn_color = "#4CAF50"    # Success Green
         
-        self.root.title("Clothes - Business Intelligence Reports")
+        self.root.title("ThreadFlow | Business Intelligence Reports")
         self.root.geometry("1150x750")
         self.root.configure(bg=self.bg_color)
         
@@ -41,20 +41,16 @@ class GenerateReports:
         self.create_form()
 
     def create_form(self):
-        # Clear existing widgets
         for widget in self.root.winfo_children():
             widget.destroy()
 
-        # 1. Main Card Container
         container = tk.Frame(self.root, bg=self.card_color, bd=0, 
                              highlightbackground="#d1d1d1", highlightthickness=1)
         container.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9, relheight=0.9)
 
-        # --- TOP NAVIGATION ROW ---
         top_nav = tk.Frame(container, bg=self.card_color)
         top_nav.pack(fill="x", padx=40, pady=(25, 10))
 
-        # Title Section
         title_frame = tk.Frame(top_nav, bg=self.card_color)
         title_frame.pack(side="left")
         tk.Label(title_frame, text="ANALYTICS ENGINE", font=("Helvetica", 9, "bold"), 
@@ -62,19 +58,16 @@ class GenerateReports:
         tk.Label(title_frame, text="Business Reports", font=("Segoe UI", 18, "bold"), 
                  bg=self.card_color, fg=self.primary_color).pack(anchor="w")
 
-        # Top Buttons
         btn_nav = tk.Frame(top_nav, bg=self.card_color)
         btn_nav.pack(side="right", pady=5)
 
         tk.Button(btn_nav, text="← DASHBOARD", command=self.back_callback,
-                  bg=self.back_btn_color, fg="white", font=("Segoe UI", 9, "bold"),
-                  bd=0, cursor="hand2", width=15).pack(side="right", padx=5, ipady=8)
+                 bg=self.back_btn_color, fg="white", font=("Segoe UI", 9, "bold"),
+                 bd=0, cursor="hand2", width=15).pack(side="right", padx=5, ipady=8)
 
-        # --- 2. CONTROL PANEL (Filters & Selection) ---
         control_panel = tk.Frame(container, bg="#f8f9fa", padx=20, pady=15)
         control_panel.pack(fill="x", padx=40, pady=10)
 
-        # Report Type Selection
         type_frame = tk.Frame(control_panel, bg="#f8f9fa")
         type_frame.pack(side="left")
         
@@ -86,7 +79,6 @@ class GenerateReports:
                            font=("Segoe UI", 9), bg="#f8f9fa", indicatoron=0, 
                            width=10, selectcolor="#e8f5e9", cursor="hand2").pack(side="left", padx=2)
 
-        # Date Selectors
         date_frame = tk.Frame(control_panel, bg="#f8f9fa")
         date_frame.pack(side="left", padx=(30, 0))
         
@@ -100,7 +92,6 @@ class GenerateReports:
                                         foreground='white', borderwidth=2, date_pattern="yyyy-mm-dd")
         self.end_date_entry.pack(side="left", padx=5)
 
-        # Action Buttons
         actions_frame = tk.Frame(control_panel, bg="#f8f9fa")
         actions_frame.pack(side="right")
 
@@ -110,7 +101,6 @@ class GenerateReports:
         tk.Button(actions_frame, text="EXPORT PDF", command=self.download_pdf,
                   bg=self.accent_blue, fg="white", font=("Segoe UI", 9, "bold"), width=12, bd=0).pack(side="left", padx=5, ipady=5)
 
-        # --- 3. DATA VIEW (Treeview) ---
         style = ttk.Style()
         style.theme_use("clam")
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
@@ -184,32 +174,36 @@ class GenerateReports:
         self.report_data = self.cursor.fetchall()
 
     def generate_profit_report(self, start, end):
-        self.tree["columns"] = ("Item Name", "Sales (RS)", "Purchases (RS)", "Profit (RS)")
+        """Calculates profit: (Total Revenue) - (Unit Cost * Qty Sold)"""
+        self.tree["columns"] = ("Item Name", "Revenue", "Cost Basis", "Gross Profit")
         for col in self.tree["columns"]: 
             self.tree.heading(col, text=col)
             self.tree.column(col, width=180, anchor="center")
 
+        # SQL Formula: SUM(sale_price * qty) - SUM(unit_price * qty)
         self.cursor.execute('''
-            SELECT mi.item_name,
-                   COALESCE((SELECT SUM(s.total_amount) FROM Sales s WHERE s.item_id = mi.item_id AND s.sale_date BETWEEN ? AND ?), 0) as ts,
-                   COALESCE((SELECT SUM(p.total_cost) FROM Purchases p WHERE p.item_id = mi.item_id AND p.purchase_date BETWEEN ? AND ?), 0) as tp
-            FROM ClothItems mi
+            SELECT 
+                mi.item_name,
+                SUM(s.total_amount) as revenue,
+                SUM(s.quantity_sold * mi.unit_price) as cost_basis,
+                SUM(s.total_amount - (s.quantity_sold * mi.unit_price)) as profit
+            FROM Sales s
+            JOIN ClothItems mi ON s.item_id = mi.item_id
+            WHERE s.sale_date BETWEEN ? AND ?
             GROUP BY mi.item_id
-            HAVING ts > 0 OR tp > 0
-        ''', (start, f"{end} 23:59:59", start, f"{end} 23:59:59"))
+        ''', (start, f"{end} 23:59:59"))
         
         raw_data = self.cursor.fetchall()
         self.report_data = []
-        t_sales, t_purch, t_profit = 0, 0, 0
+        t_rev, t_cost, t_prof = 0, 0, 0
 
         for row in raw_data:
-            name, s, p = row
-            prof = s - p
-            self.report_data.append((name, f"RS {s:,.2f}", f"RS {p:,.2f}", f"RS {prof:,.2f}"))
-            t_sales += s; t_purch += p; t_profit += prof
+            name, rev, cost, prof = row
+            self.report_data.append((name, f"RS {rev:,.2f}", f"RS {cost:,.2f}", f"RS {prof:,.2f}"))
+            t_rev += rev; t_cost += cost; t_prof += prof
 
         if self.report_data:
-            self.report_data.append(("GRAND TOTAL", f"RS {t_sales:,.2f}", f"RS {t_purch:,.2f}", f"RS {t_profit:,.2f}"))
+            self.report_data.append(("GRAND TOTAL", f"RS {t_rev:,.2f}", f"RS {t_cost:,.2f}", f"RS {t_prof:,.2f}"))
 
     def display_report(self):
         for item in self.tree.get_children(): self.tree.delete(item)
@@ -254,7 +248,7 @@ class GenerateReports:
                 lbl = tk.Label(win, image=img); lbl.image = img; lbl.pack(padx=10, pady=10)
 
     def download_pdf(self):
-        if not self.report_data: return messagebox.showerror("Error", "No data to export. Generate a view first.")
+        if not self.report_data: return messagebox.showerror("Error", "No data to export.")
         rtype = self.report_var.get()
         fname = f"{self.reports_folder}/{rtype.lower()}_report.pdf"
         doc = SimpleDocTemplate(fname, pagesize=letter)
@@ -275,7 +269,7 @@ class GenerateReports:
         ]))
         elements.append(table)
         doc.build(elements)
-        messagebox.showinfo("Success", f"Report exported successfully to: {fname}")
+        messagebox.showinfo("Success", f"Exported to: {fname}")
 
     def __del__(self):
         if hasattr(self, 'conn'): self.conn.close()
